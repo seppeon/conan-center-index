@@ -29,7 +29,12 @@ class ZlibConan(ConanFile):
 
     @property
     def _is_mingw(self):
-        return self.settings.os == "Windows" and self.settings.compiler == "gcc"
+        return (
+            self.settings.os == "Windows" and
+            (self.settings.compiler == "gcc" or
+                (self.settings.compiler == "clang" and not self.settings.compiler.get_safe("runtime"))
+            )
+        )
 
     def export_sources(self):
         export_conandata_patches(self)
@@ -53,6 +58,7 @@ class ZlibConan(ConanFile):
 
     def generate(self):
         tc = CMakeToolchain(self)
+        tc.variables["ZLIB_BUILD_EXAMPLES"]=False
         tc.variables["SKIP_INSTALL_ALL"] = False
         tc.variables["SKIP_INSTALL_LIBRARIES"] = False
         tc.variables["SKIP_INSTALL_HEADERS"] = False
