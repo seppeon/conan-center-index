@@ -1,5 +1,4 @@
 #include <vulkan/vk_format_utils.h>
-
 #include <iostream>
 
 int main() {

@@ -1,3 +1,4 @@
+import logging
 from conan import ConanFile, conan_version
 from conan.errors import ConanException, ConanInvalidConfiguration
 from conan.tools.apple import fix_apple_shared_install_name
@@ -112,6 +113,8 @@ class VulkanValidationLayersConan(ConanFile):
             self.requires("xorg/system")
         if self._needs_wayland_for_build:
             self.requires("wayland/1.22.0")
+        if Version(self.version) >= Version("1.4.309.0"):
+            self.requires(f"vulkan-utility-libraries/{self.version}", transitive_headers=True)
 
     def _require(self, recipe_name):
         if recipe_name not in self._dependencies_versions:
@@ -156,8 +159,8 @@ class VulkanValidationLayersConan(ConanFile):
         tc = CMakeToolchain(self)
         if Version(self.version) >= "1.3.239":
             tc.cache_variables["VVL_CLANG_TIDY"] = False
-        if Version(self.version) < "1.3.234":
-            tc.variables["VULKAN_HEADERS_INSTALL_DIR"] = self.dependencies["vulkan-headers"].package_folder.replace("\\", "/")
+        # if Version(self.version) < "1.3.234":
+        tc.variables["VULKAN_HEADERS_INSTALL_DIR"] = self.dependencies["vulkan-headers"].package_folder.replace("\\", "/")
         tc.variables["USE_CCACHE"] = False
         if self.settings.os in ["Linux", "FreeBSD"]:
             tc.variables["BUILD_WSI_XCB_SUPPORT"] = self.options.get_safe("with_wsi_xcb")
@@ -171,7 +174,8 @@ class VulkanValidationLayersConan(ConanFile):
         tc.variables["BUILD_TESTS"] = False
         tc.variables["INSTALL_TESTS"] = False
         tc.variables["BUILD_LAYERS"] = True
-        tc.variables["BUILD_LAYER_SUPPORT_FILES"] = True
+        # See https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/6830
+        tc.variables["BUILD_LAYER_SUPPORT_FILES"] = (Version(self.version) < "1.3.268")
         tc.generate()
 
         deps = CMakeDeps(self)
@@ -230,7 +234,7 @@ class VulkanValidationLayersConan(ConanFile):
             # move dll and json manifest files in bin folder
             bin_dir = os.path.join(self.package_folder, "bin")
             mkdir(self, bin_dir)
-            for ext in ("*.dll", "*.json"):
+            for ext in ("*.dll", "*.json", "*.a"):
                 for bin_file in glob.glob(os.path.join(lib_dir, ext)):
                     shutil.move(bin_file, os.path.join(bin_dir, os.path.basename(bin_file)))
         else:
@@ -238,14 +242,16 @@ class VulkanValidationLayersConan(ConanFile):
             # path between module library and manifest json file
             rename(self, os.path.join(self.package_folder, "share"), os.path.join(self.package_folder, "res"))
         fix_apple_shared_install_name(self)
-
+  
     def package_info(self):
-        self.cpp_info.libs = ["VkLayer_utils"]
-
+        if Version(self.version) < "1.4.309.0":
+            # See https://vulkan.lunarg.com/issue/home?limit=10;q=;mine=false;org=false;khronos=false;lunarg=false;indie=false;status=new,open
+            self.cpp_info.libs = ["VkLayer_utils"]
+        else:
+            self.cpp_info.includedirs = []
         manifest_subfolder = "bin" if self.settings.os == "Windows" else os.path.join("res", "vulkan", "explicit_layer.d")
         vk_layer_path = os.path.join(self.package_folder, manifest_subfolder)
         self.runenv_info.prepend_path("VK_LAYER_PATH", vk_layer_path)
-
         # Update runtime discovery paths to allow libVkLayer_khronos_validation.{so,dll,dylib} to be discovered
         # and loaded by vulkan-loader when the consumer executes
         # This is necessary because this package exports a static lib to link against and a dynamic lib to load at runtime
@@ -256,9 +262,7 @@ class VulkanValidationLayersConan(ConanFile):
             runtime_lib_discovery_path = "DYLD_LIBRARY_PATH"
         for libdir in [os.path.join(self.package_folder, libdir) for libdir in self.cpp_info.libdirs]:
             self.runenv_info.prepend_path(runtime_lib_discovery_path, libdir)
-
         # TODO: to remove after conan v2, it allows to not break consumers still relying on virtualenv generator
         self.env_info.VK_LAYER_PATH.append(vk_layer_path)
-
         if self.settings.os == "Android":
             self.cpp_info.system_libs.extend(["android", "log"])

@@ -452,10 +452,8 @@ class SDLConan(ConanFile):
         # SDL2main
         if self.options.sdl2main:
             self.cpp_info.components["sdl2main"].set_property("cmake_target_name", "SDL2::SDL2main")
-
             self.cpp_info.components["sdl2main"].names["cmake_find_package"] = "SDL2main"
             self.cpp_info.components["sdl2main"].names["cmake_find_package_multi"] = "SDL2main"
-
             self.cpp_info.components["sdl2main"].libs = ["SDL2main" + postfix]
             self.cpp_info.components["sdl2main"].requires = ["libsdl2"]
 
